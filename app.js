@@ -1,361 +1,143 @@
-// Initialize Supabase
-const supabaseUrl = 'https://asgumfyggmcolwjjkcdw.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzZ3VtZnlnZ21jb2x3amprY2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQzNDYyNDYsImV4cCI6MjA1OTkyMjI0Nn0.WLy0QNs8_0ZTS9j80_7-xy5w6sMaX6s5I5E3AGos4oM   ';
-const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+// Razorpay configuration
+const razorpayKey = 'YOUR_RAZORPAY_KEY_ID'; // Replace with your Razorpay key
 
 // DOM Elements
-const authSection = document.getElementById('authSection');
-const employeeDashboard = document.getElementById('employeeDashboard');
-const adminDashboard = document.getElementById('adminDashboard');
-const loginBtn = document.getElementById('loginBtn');
-const signupBtn = document.getElementById('signupBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const adminLogoutBtn = document.getElementById('adminLogoutBtn');
-const addEmployeeBtn = document.getElementById('addEmployeeBtn');
-const saveEmployeeBtn = document.getElementById('saveEmployeeBtn');
-const employeesTable = document.getElementById('employeesTable');
+const paymentForm = document.getElementById('paymentForm');
+const paymentSection = document.getElementById('paymentSection');
+const payNowBtn = document.getElementById('payNowBtn');
+const resetFormBtn = document.getElementById('resetFormBtn');
+const paymentStatusModal = new bootstrap.Modal(document.getElementById('paymentStatusModal'));
 
-// Modal
-const addEmployeeModal = new bootstrap.Modal(document.getElementById('addEmployeeModal'));
+// Store employee data
+let currentEmployee = null;
 
-// Check if user is logged in on page load
-document.addEventListener('DOMContentLoaded', () => {
-    checkUser();
-});
-
-// Login function
-loginBtn.addEventListener('click', async () => {
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
+// Form submission
+paymentForm.addEventListener('submit', function(e) {
+    e.preventDefault();
     
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-    });
-    
-    if (error) {
-        alert(error.message);
-    } else {
-        checkUser();
-    }
-});
-
-// Signup function
-signupBtn.addEventListener('click', async () => {
-    const name = document.getElementById('signupName').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    const accountNumber = document.getElementById('accountNumber').value;
-    const bankName = document.getElementById('bankName').value;
-    
-    // Default salary for new employees
-    const salary = 0;
-    
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-    });
-    
-    if (authError) {
-        alert(authError.message);
-        return;
-    }
-    
-    // Add employee data to database
-    const { data: empData, error: empError } = await supabase
-        .from('employees')
-        .insert([
-            { 
-                name, 
-                email, 
-                account_number: accountNumber, 
-                bank_name: bankName, 
-                salary,
-                user_id: authData.user.id 
-            }
-        ]);
-    
-    if (empError) {
-        alert(empError.message);
-    } else {
-        alert('Signup successful! Please login.');
-        document.getElementById('signupName').value = '';
-        document.getElementById('signupEmail').value = '';
-        document.getElementById('signupPassword').value = '';
-        document.getElementById('accountNumber').value = '';
-        document.getElementById('bankName').value = '';
-    }
-});
-
-// Logout function
-logoutBtn.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    checkUser();
-});
-
-adminLogoutBtn.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    checkUser();
-});
-
-// Check user status and show appropriate dashboard
-async function checkUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (user) {
-        authSection.classList.add('d-none');
-        
-        // Check if user is admin (simple check for demo - in production use proper roles)
-        const { data: employees, error } = await supabase
-            .from('employees')
-            .select('*');
-            
-        if (error) {
-            console.error(error);
-            return;
-        }
-        
-        const isAdmin = employees.some(emp => emp.email === user.email);
-        
-        if (isAdmin) {
-            employeeDashboard.classList.add('d-none');
-            adminDashboard.classList.remove('d-none');
-            loadEmployees();
-        } else {
-            adminDashboard.classList.add('d-none');
-            employeeDashboard.classList.remove('d-none');
-            loadEmployeeData(user.id);
-        }
-    } else {
-        authSection.classList.remove('d-none');
-        employeeDashboard.classList.add('d-none');
-        adminDashboard.classList.add('d-none');
-    }
-}
-
-// Load employee data for employee dashboard
-async function loadEmployeeData(userId) {
-    const { data: employee, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-    
-    if (error) {
-        console.error(error);
-        return;
-    }
-    
-    document.getElementById('employeeName').textContent = employee.name;
-    document.getElementById('employeeAccount').textContent = employee.account_number;
-    document.getElementById('employeeBank').textContent = employee.bank_name;
-    document.getElementById('employeeSalary').textContent = employee.salary.toFixed(2);
-    
-    // Generate QR code for payment
-    generateQRCode(employee);
-}
-
-// Generate QR code with payment details
-function generateQRCode(employee) {
-    // Format payment details as UPI payment string (for Indian banks)
-    // Adjust this format based on your payment gateway requirements
-    const paymentString = `upi://pay?pa=${employee.account_number}@${employee.bank_name.toLowerCase().replace(/\s/g, '')}&pn=${encodeURIComponent(employee.name)}&am=${employee.salary}&cu=USD`;
-    
-    // Generate QR code
-    const qr = qrcode(0, 'L');
-    qr.addData(paymentString);
-    qr.make();
-    
-    document.getElementById('qrCode').innerHTML = qr.createImgTag(4);
-}
-
-// Load employees for admin dashboard
-async function loadEmployees() {
-    const { data: employees, error } = await supabase
-        .from('employees')
-        .select('*');
-    
-    if (error) {
-        console.error(error);
-        return;
-    }
-    
-    employeesTable.innerHTML = '';
-    
-    employees.forEach(employee => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${employee.name}</td>
-            <td>${employee.email}</td>
-            <td>${employee.account_number}</td>
-            <td>${employee.bank_name}</td>
-            <td>$${employee.salary.toFixed(2)}</td>
-            <td>
-                <button class="btn btn-sm btn-primary pay-btn" data-id="${employee.id}">Pay</button>
-                <button class="btn btn-sm btn-warning edit-btn" data-id="${employee.id}">Edit</button>
-            </td>
-        `;
-        employeesTable.appendChild(row);
-    });
-    
-    // Add event listeners to buttons
-    document.querySelectorAll('.pay-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const empId = e.target.getAttribute('data-id');
-            payEmployee(empId);
-        });
-    });
-    
-    document.querySelectorAll('.edit-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const empId = e.target.getAttribute('data-id');
-            editEmployee(empId);
-        });
-    });
-}
-
-// Add new employee
-addEmployeeBtn.addEventListener('click', () => {
-    // Clear form
-    document.getElementById('empName').value = '';
-    document.getElementById('empEmail').value = '';
-    document.getElementById('empAccount').value = '';
-    document.getElementById('empBank').value = '';
-    document.getElementById('empSalary').value = '';
-    
-    addEmployeeModal.show();
-});
-
-saveEmployeeBtn.addEventListener('click', async () => {
-    const name = document.getElementById('empName').value;
-    const email = document.getElementById('empEmail').value;
-    const accountNumber = document.getElementById('empAccount').value;
-    const bankName = document.getElementById('empBank').value;
-    const salary = parseFloat(document.getElementById('empSalary').value);
-    
-    // In a real app, you would create a user account first
-    // For this demo, we'll just add to the employees table
-    
-    const { data, error } = await supabase
-        .from('employees')
-        .insert([
-            { 
-                name, 
-                email, 
-                account_number: accountNumber, 
-                bank_name: bankName, 
-                salary,
-                user_id: null // No user account for demo
-            }
-        ]);
-    
-    if (error) {
-        alert(error.message);
-    } else {
-        addEmployeeModal.hide();
-        loadEmployees();
-    }
-});
-
-// Pay employee
-async function payEmployee(empId) {
-    const { data: employee, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', empId)
-        .single();
-    
-    if (error) {
-        alert(error.message);
-        return;
-    }
-    
-    // In a real app, you would integrate with a payment gateway API here
-    // For this demo, we'll just show the payment details in a QR code
-    
-    alert(`Initiating payment of $${employee.salary.toFixed(2)} to ${employee.name}`);
-    
-    // Show payment QR code in a modal
-    const paymentModal = new bootstrap.Modal(document.createElement('div'));
-    const modalContent = `
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Payment to ${employee.name}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <p>Scan this QR code to pay $${employee.salary.toFixed(2)}</p>
-                    <div id="paymentQr"></div>
-                    <p class="mt-3">Or send to account:<br>
-                    ${employee.account_number}<br>
-                    ${employee.bank_name}</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    paymentModal._element.innerHTML = modalContent;
-    paymentModal.show();
-    
-    // Generate QR code
-    const paymentString = `upi://pay?pa=${employee.account_number}@${employee.bank_name.toLowerCase().replace(/\s/g, '')}&pn=${encodeURIComponent(employee.name)}&am=${employee.salary}&cu=USD`;
-    const qr = qrcode(0, 'L');
-    qr.addData(paymentString);
-    qr.make();
-    document.getElementById('paymentQr').innerHTML = qr.createImgTag(4);
-}
-
-// Edit employee
-async function editEmployee(empId) {
-    const { data: employee, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', empId)
-        .single();
-    
-    if (error) {
-        alert(error.message);
-        return;
-    }
-    
-    // Fill the form
-    document.getElementById('empName').value = employee.name;
-    document.getElementById('empEmail').value = employee.email;
-    document.getElementById('empAccount').value = employee.account_number;
-    document.getElementById('empBank').value = employee.bank_name;
-    document.getElementById('empSalary').value = employee.salary;
-    
-    // Change save button to update
-    saveEmployeeBtn.textContent = 'Update Employee';
-    saveEmployeeBtn.onclick = async () => {
-        const name = document.getElementById('empName').value;
-        const email = document.getElementById('empEmail').value;
-        const accountNumber = document.getElementById('empAccount').value;
-        const bankName = document.getElementById('empBank').value;
-        const salary = parseFloat(document.getElementById('empSalary').value);
-        
-        const { data, error } = await supabase
-            .from('employees')
-            .update({ 
-                name, 
-                email, 
-                account_number: accountNumber, 
-                bank_name: bankName, 
-                salary 
-            })
-            .eq('id', empId);
-        
-        if (error) {
-            alert(error.message);
-        } else {
-            addEmployeeModal.hide();
-            loadEmployees();
-        }
+    // Get form values
+    currentEmployee = {
+        name: document.getElementById('employeeName').value,
+        email: document.getElementById('employeeEmail').value,
+        accountNumber: document.getElementById('employeeAccount').value,
+        bankName: document.getElementById('employeeBank').value,
+        salary: parseFloat(document.getElementById('employeeSalary').value)
     };
     
-    addEmployeeModal.show();
+    // Display payment details
+    document.getElementById('displayName').textContent = currentEmployee.name;
+    document.getElementById('displayAccount').textContent = currentEmployee.accountNumber;
+    document.getElementById('displayBank').textContent = currentEmployee.bankName;
+    document.getElementById('displaySalary').textContent = currentEmployee.salary.toFixed(2);
+    
+    // Show payment section
+    paymentSection.classList.remove('d-none');
+    
+    // Scroll to payment section
+    paymentSection.scrollIntoView({ behavior: 'smooth' });
+});
+
+// Pay Now button
+payNowBtn.addEventListener('click', function() {
+    if (currentEmployee) {
+        initiatePayment(currentEmployee);
+    }
+});
+
+// Reset form
+resetFormBtn.addEventListener('click', function() {
+    paymentForm.reset();
+    paymentSection.classList.add('d-none');
+    currentEmployee = null;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+// Initiate Razorpay payment
+async function initiatePayment(employee) {
+    try {
+        // In a production app, you would call your backend to create an order
+        // For this demo, we'll simulate it client-side
+        
+        const paymentAmount = employee.salary * 100; // Razorpay uses paise (multiply by 100)
+        
+        const options = {
+            key: razorpayKey,
+            amount: paymentAmount,
+            currency: 'INR',
+            name: 'Salary Payment System',
+            description: `Salary payment for ${employee.name}`,
+            image: 'https://example.com/your_logo.png', // Add your logo
+            handler: function(response) {
+                // Handle successful payment
+                showPaymentStatus('success', `Payment of ₹${employee.salary.toFixed(2)} to ${employee.name} was successful!`, response);
+                
+                // In a real app, you would verify the payment signature with your backend
+                // and update your database with the payment details
+            },
+            prefill: {
+                name: employee.name,
+                email: employee.email,
+                contact: '' // Add employee phone number if available
+            },
+            notes: {
+                account_number: employee.accountNumber,
+                bank_name: employee.bankName
+            },
+            theme: {
+                color: '#3399cc'
+            }
+        };
+        
+        const rzp = new Razorpay(options);
+        rzp.open();
+        
+        rzp.on('payment.failed', function(response) {
+            showPaymentStatus('failed', `Payment failed for ${employee.name}. Please try again.`, response);
+        });
+        
+    } catch (error) {
+        console.error('Payment error:', error);
+        showPaymentStatus('error', 'An error occurred while processing the payment.');
+    }
+}
+
+// Show payment status
+function showPaymentStatus(status, message, response = null) {
+    const statusTitle = document.getElementById('paymentStatusTitle');
+    const statusBody = document.getElementById('paymentStatusBody');
+    
+    if (status === 'success') {
+        statusTitle.textContent = 'Payment Successful';
+        statusBody.innerHTML = `
+            <div class="alert alert-success">
+                ${message}
+            </div>
+            <div class="mt-3">
+                <h6>Payment Details:</h6>
+                <p>Payment ID: ${response.razorpay_payment_id}</p>
+                <p>Order ID: ${response.razorpay_order_id}</p>
+                <p>Signature: ${response.razorpay_signature}</p>
+            </div>
+            <p class="mt-2">A receipt has been sent to ${currentEmployee.email}</p>
+        `;
+    } else if (status === 'failed') {
+        statusTitle.textContent = 'Payment Failed';
+        statusBody.innerHTML = `
+            <div class="alert alert-danger">
+                ${message}
+            </div>
+            ${response ? `<p>Error: ${response.error.description}</p>` : ''}
+            <p>Please try the payment again.</p>
+        `;
+    } else {
+        statusTitle.textContent = 'Payment Error';
+        statusBody.innerHTML = `
+            <div class="alert alert-warning">
+                ${message}
+            </div>
+            <p>Please contact support if the problem persists.</p>
+        `;
+    }
+    
+    paymentStatusModal.show();
 }
